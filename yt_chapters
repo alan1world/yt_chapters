@@ -91,6 +91,7 @@ def get_args():
                         help='List of links to download')
     parser.add_argument('--use-cli', help="Use youtube-dl installed",
                         action="store_true")
+    parser.add_argument('--cli-path', type=str, help="Define the path of the installed youtube-dl")
     parser.add_argument("--split", help="Split chapters into individual files",
                         action="store_true")
     parser.add_argument("--test", help="Download worst version to speed up testing",
@@ -106,6 +107,7 @@ if __name__ == '__main__':
     
     if args.use_cli:
         USE_CLI = True
+        CLI_PATH = args.cli_path
 
     for index in range( 0, len(args.links) ):
         
@@ -119,9 +121,6 @@ if __name__ == '__main__':
         download_filename = f'{download_name}.mp4'
         chapter_file = f'{download_name}_chapter.txt'
         description = infos['description']
-        
-        print(download_name)
-        print(download_filename)
 
         if args.fix:
             input("Fix the description file to have the chapters "
@@ -151,3 +150,4 @@ if __name__ == '__main__':
 
         # Clean up the text files
         os.remove(chapter_file)
+
