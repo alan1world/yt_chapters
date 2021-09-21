@@ -1,90 +1,61 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 # TODO: change working location to be a temp dir
 # TODO: Add option for mkv
 
 import subprocess, os, argparse, datetime, re, sys
+from youtube_dl import YoutubeDL
+from handleYDL import *
 
-def get_source_name(download_source:str)->str:
+USE_CLI = False
+CLI_PATH = 'youtube-dl'
 
-    # Get the expected filename in order to process everything down the line
-    result = subprocess.run(["youtube-dl", "--get-filename",
-                            "-o", "%(title)s", download_source],
-                            capture_output=True, encoding='UTF8')
-    return result.stdout.rstrip('\n')
-
-def get_best_mp4_single_file(download_source:str, description_file:str,
-                             fix_required:bool=False)->list:
-
-    # Download the file as mp4 (in order to use MP4)
-    subprocess.run(["youtube-dl", "--write-description", "-f",
-                    "bestvideo[ext=mp4]+bestaudio[ext=m4a]/mp4",
-                    "-o", "%(title)s.%(ext)s", link_to_download])
-    if fix_required:
-        input("Fix the description file to have the chapters "
-              "on their own lines in the format timecode name "
-              "and then press Enter to continue...")
-    return read_description_file(description_file=description_file)
-
-def get_worst_mp4_single_file(download_source:str, description_file:str,
-                              fix_required:bool=False)->list:
-
-    # Download the file as mp4 (in order to use MP4)
-    subprocess.run(["youtube-dl", "--write-description", "-f",
-                    "worstvideo[ext=mp4]+worstaudio[ext=m4a]/mp4",
-                    "-o", "%(title)s.%(ext)s", link_to_download])
-    if fix_required:
-        input("Fix the description file to have the chapters "
-              "on their own lines in the format timecode name "
-              "and then press Enter to continue...")
-    return read_description_file(description_file=description_file)
 
 def add_chapters_to_mp4(chapter_file_name:str, name_for_download:str)->None:
 
     # Use MP4Box to mux the chapter file with the mp4
     subprocess.run(["MP4Box", "-chap", chapter_file_name, name_for_download])
 
-def read_description_file(description_file:str)->list:
+def get_chapters( chapters_str:str )->list:
 
     # Read the description file
     # Split into time and chapter name
 
     list_of_chapters = []
 
-    with open(description_file, 'r') as f:
-        # only increment chapter number on a chapter line
-        # chapter lines start with timecode
-        line_counter = 1
-        for line in f:
-            result = re.search(r"\(?(\d?[:]?\d+[:]\d+)\)?", line)
+    # only increment chapter number on a chapter line
+    # chapter lines start with timecode
+    line_counter = 1
+    for line in chapters_str.split('\n'):
+        result = re.search(r"\(?(\d?[:]?\d+[:]\d+)\)?", line)
+        try:
+            # result = re.search("\(?(\d+[:]\d+[:]\d+)\)?", line)
+            time_count = datetime.datetime.strptime(result.group(1), '%H:%M:%S')
+        except:
             try:
-                # result = re.search("\(?(\d+[:]\d+[:]\d+)\)?", line)
-                time_count = datetime.datetime.strptime(result.group(1), '%H:%M:%S')
+                # result = re.search("\(?(\d+[:]\d+)\)?", line)
+                time_count = datetime.datetime.strptime(result.group(1), '%M:%S')
             except:
-                try:
-                    # result = re.search("\(?(\d+[:]\d+)\)?", line)
-                    time_count = datetime.datetime.strptime(result.group(1), '%M:%S')
-                except:
-                    continue
-            chap_name = line.replace(result.group(0),"").rstrip(' :\n')
-            chap_pos = datetime.datetime.strftime(time_count, '%H:%M:%S')
-            list_of_chapters.append((str(line_counter).zfill(2), chap_pos, chap_name))
-            line_counter += 1
+                continue
+        chap_name = line.replace(result.group(0),"").rstrip(' :\n')
+        chap_pos = datetime.datetime.strftime(time_count, '%H:%M:%S')
+        list_of_chapters.append((str(line_counter).zfill(2), chap_pos, chap_name))
+        line_counter += 1
 
     return list_of_chapters
 
 def write_chapters_file(chapter_file:str, chapter_list:tuple)->None:
 
-            #open(chapter_file, 'w').close()
+    #open(chapter_file, 'w').close()
 
-            # Write out the chapter file based on simple MP4 format (OGM)
-            with open(chapter_file, 'w') as fo:
-                for current_chapter in chapter_list:
-                    fo.write(f'CHAPTER{current_chapter[0]}='
-                            f'{current_chapter[1]}\n'
-                            f'CHAPTER{current_chapter[0]}NAME='
-                            f'{current_chapter[2]}\n')
+    # Write out the chapter file based on simple MP4 format (OGM)
+    with open(chapter_file, 'w') as fo:
+        for current_chapter in chapter_list:
+            fo.write(f'CHAPTER{current_chapter[0]}='
+                    f'{current_chapter[1]}\n'
+                    f'CHAPTER{current_chapter[0]}NAME='
+                    f'{current_chapter[2]}\n')
 
 
 def split_mp4(chapters:list, download_filename:str, download_name:str)->None:
@@ -114,38 +85,55 @@ def split_mp4(chapters:list, download_filename:str, download_name:str)->None:
                         "-i", download_filename, "-acodec", "copy",
                         "-vcodec", "copy", output_name])
 
-if __name__ == '__main__':
-
+def get_args():
     parser = argparse.ArgumentParser(description='Download Youtube videos with chapters')
 
     parser.add_argument('links', metavar='N', type=str, nargs='+',
                         help='List of links to download')
-
+    
+    parser.add_argument("-d", "--descriptions", metavar='D', type=str, nargs='+', 
+                        help="Define a file to get the chapter's timestamps")
     parser.add_argument("--split", help="Split chapters into individual files",
                         action="store_true")
     parser.add_argument("--test", help="Download worst version to speed up testing",
                         action="store_true")
     parser.add_argument("--fix", help="Pause to allow manual correction of the description file",
                         action="store_true")
-    args = parser.parse_args()
-    # print(args.links)
+    
+    return parser.parse_args()
 
-    for link_to_download in args.links:
+if __name__ == '__main__':
 
-        download_name = get_source_name(download_source=link_to_download)
+    args = get_args()
+    
+    for index in range( 0, len(args.links) ):
+        
+        link_to_download = args.links[index]
+        options = {}
+        
+        options['outtmpl'] = '%(title)s'
+        infos = get_infos( link_to_download, options )
+        
+        download_name = infos['title']
         download_filename = f'{download_name}.mp4'
-        description_file = f'{download_name}.description'
         chapter_file = f'{download_name}_chapter.txt'
+        description = infos['description']
+        
+        print(download_name)
+        print(download_filename)
+
+        if args.fix:
+            input("Fix the description file to have the chapters "
+                  "on their own lines in the format timecode name "
+                  "and then press Enter to continue...")
+        
+        chapters = get_chapters( description )
 
         if not args.test:
-            chapters = get_best_mp4_single_file(download_source=link_to_download,
-                                                description_file=description_file,
-                                                fix_required=args.fix)
+            options['format'] = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/mp4"
         else:
-            chapters = get_worst_mp4_single_file(download_source=link_to_download,
-                                                description_file=description_file,
-                                                fix_required=args.fix)
-
+            options['format'] = "worstvideo[ext=mp4]+worstaudio[ext=m4a]/mp4"
+        download( link_to_download, options )
         
         if not chapter_file:
             print("No chapters found")
@@ -161,5 +149,4 @@ if __name__ == '__main__':
                               name_for_download=download_filename)
 
         # Clean up the text files
-        os.remove(description_file)
         os.remove(chapter_file)
